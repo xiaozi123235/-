@@ -1,0 +1,715 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>表格数据裂变工具</title>
+    <!-- Tailwind CSS CDN -->
+    <script src="https://cdn.tailwindcss.com"></script>   
+    <!-- Font Awesome 图标 -->
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.7.2/css/all.min.css"  rel="stylesheet">
+    <!-- XLSX.js 库 -->
+    <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>   
+    <!-- 自定义 Tailwind 工具类 -->
+    <style type="text/tailwindcss">
+        @layer utilities {
+            .content-auto { content-visibility: auto; }
+            .shadow-soft { box-shadow: 0 4px 20px rgba(0, 0, 0, 0.08); }
+            .transition-custom { transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1); }
+            .scrollbar-hide::-webkit-scrollbar { display: none; }
+            .scrollbar-hide { -ms-overflow-style: none; scrollbar-width: none; }
+        }
+    </style>
+    <!-- 自定义 Tailwind 颜色配置 -->
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    colors: {
+                        primary: '#1E90FF', // 蓝色
+                        accent: '#FF6347'   // 红橙色
+                    }
+                }
+            }
+        };
+    </script>
+</head>
+<body class="font-inter bg-gray-50 text-gray-800 min-h-screen flex flex-col">
+<!-- 页面内容保留未加密以确保可见性 -->
+<header class="bg-white shadow-sm sticky top-0 z-10">
+    <div class="container mx-auto px-4 py-4 flex justify-between items-center">
+        <div class="flex items-center space-x-2">
+            <i class="fa fa-table text-blue-500 text-2xl"></i>
+            <h1 class="text-xl md:text-2xl font-bold text-gray-800">表格数据裂变工具 广州森泽</h1>
+        </div>
+    </div>
+</header>
+<main class="flex-grow container mx-auto px-4 py-8">
+    <div class="grid grid-cols-1 lg:grid-cols-12 gap-8">
+        <!-- 左侧控制面板 -->
+        <div class="lg:col-span-4 space-y-6">
+            <!-- 文件上传卡片 -->
+            <div class="bg-white rounded-xl shadow-soft p-6 hover:shadow-lg transition">
+                <h2 class="text-lg font-semibold mb-4 flex items-center">
+                    <i class="fa fa-upload text-blue-500 mr-2"></i>上传数据
+                </h2>
+                <div id="fileDropArea" class="border-2 border-dashed border-gray-300 rounded-lg p-8 text-center cursor-pointer hover:border-blue-500 transition">
+                    <i class="fa fa-file-excel text-4xl text-gray-400 mb-3"></i>
+                    <p class="text-gray-500 mb-2">拖放表格文件到这里</p>
+                    <p class="text-gray-500 text-sm mb-4">支持 CSV, XLSX, Excel 格式</p>
+                    <button class="mt-3 bg-blue-100 hover:bg-blue-200 text-blue-500 px-4 py-2 rounded-lg transition">选择文件</button>
+                    <input type="file" id="fileInput" accept=".csv,.xlsx,.xls" class="hidden">
+                </div>
+                <div id="fileInfo" class="hidden mt-4 p-3 bg-gray-50 rounded-lg">
+                    <div class="flex items-center justify-between">
+                        <div>
+                            <p id="fileName" class="font-medium"></p>
+                            <p id="fileSize" class="text-sm text-gray-500"></p>
+                        </div>
+                        <button id="removeFile" class="text-red-500 hover:text-red-700"><i class="fa fa-times-circle"></i></button>
+                    </div>
+                    <!-- Sheet选择器 (Excel文件) -->
+                    <div id="sheetSelector" class="hidden mt-3">
+                        <label class="block text-sm font-medium text-gray-700 mb-1">选择工作表</label>
+                        <select id="sheetSelect" class="w-full p-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500">
+                            <option value="">加载中...</option>
+                        </select>
+                    </div>
+                </div>
+            </div>
+            <!-- 裂变设置卡片 -->
+            <div class="bg-white rounded-xl shadow-soft p-6 hover:shadow-lg transition">
+                <h2 class="text-lg font-semibold mb-4 flex items-center">
+                    <i class="fa fa-clone text-blue-500 mr-2"></i>裂变设置
+                </h2>
+                <div class="space-y-4">
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 mb-1">裂变倍数</label>
+                        <div class="flex items-center">
+                            <button id="decreaseCount" class="bg-gray-100 hover:bg-gray-200 text-gray-700 px-3 py-2 rounded-l-lg transition"><i class="fa fa-minus"></i></button>
+                            <input type="number" id="fissionCount" value="10" min="1" max="1000" class="w-full text-center border-y border-gray-300 py-2 focus:outline-none">
+                            <button id="increaseCount" class="bg-gray-100 hover:bg-gray-200 text-gray-700 px-3 py-2 rounded-r-lg transition"><i class="fa fa-plus"></i></button>
+                        </div>
+                        <p class="text-xs text-gray-500 mt-1">每条记录将裂变为此倍数的数量</p>
+                    </div>
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 mb-1">标题列设置</label>
+                        <select id="titleColumn" class="w-full p-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500" disabled="disabled">
+                            <option value="">请选择标题列</option>
+                        </select>
+                        <div class="mt-2 flex items-center">
+                            <input type="checkbox" id="appendNumber" checked class="mr-2 h-4 w-4 text-blue-500 focus:ring-blue-500 border-gray-300 rounded">
+                            <label for="appendNumber" class="text-sm text-gray-700">在标题后添加自增长数字</label>
+                        </div>
+                    </div>
+                    <!-- 变种名称列 -->
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 mb-1">变种名称列</label>
+                        <select id="variantNameColumn" class="w-full p-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500" disabled="disabled">
+                            <option value="">请选择变种名称列</option>
+                        </select>
+                    </div>
+                    <!-- 变种属性值二列 -->
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 mb-1">变种属性值二列</label>
+                        <select id="variantAttrColumn" class="w-full p-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500" disabled="disabled">
+                            <option value="">请选择变种属性值二列</option>
+                        </select>
+                    </div>
+                    <!-- SKU属性列 -->
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 mb-1">SKU属性列</label>
+                        <select id="skuAttrColumn" class="w-full p-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500" disabled="disabled">
+                            <option value="">请选择SKU属性列</option>
+                        </select>
+                    </div>
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 mb-1">处理批次大小</label>
+                        <select id="batchSize" class="w-full p-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500">
+                            <option value="100">100行/批次</option>
+                            <option value="500" selected>500行/批次</option>
+                            <option value="1000">1000行/批次</option>
+                            <option value="5000">5000行/批次</option>
+                        </select>
+                        <p class="text-xs text-gray-500 mt-1">较大的批次可能更快，但占用更多内存</p>
+                    </div>
+                    <button id="processBtn" class="w-full bg-blue-500 hover:bg-blue-600 text-white font-medium py-2 px-4 rounded-lg transition flex items-center justify-center opacity-50 cursor-not-allowed" disabled>
+                        <i class="fa fa-cogs mr-2"></i>开始裂变
+                    </button>
+                </div>
+            </div>
+        </div>
+        <!-- 右侧表格展示区 -->
+        <div class="lg:col-span-8 space-y-6">
+            <!-- 原始数据预览 -->
+            <div class="bg-white rounded-xl shadow-soft p-6 hover:shadow-lg transition">
+                <div class="flex justify-between items-center mb-4">
+                    <h2 class="text-lg font-semibold flex items-center">
+                        <i class="fa fa-database text-blue-500 mr-2"></i>原始数据
+                    </h2>
+                </div>
+                <div class="overflow-x-auto max-h-[400px]">
+                    <table class="min-w-full divide-y divide-gray-200" id="originalTable">
+                        <thead class="bg-gray-50 sticky top-0">
+                            <tr id="originalTableHeader">
+                                <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">列1</th>
+                                <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">列2</th>
+                                <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">列3</th>
+                            </tr>
+                        </thead>
+                        <tbody class="bg-white divide-y divide-gray-200" id="originalTableBody">
+                            <tr class="text-center">
+                                <td colspan="3" class="px-4 py-8 text-gray-500">请上传表格文件</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+            <!-- 裂变结果预览 -->
+            <div class="bg-white rounded-xl shadow-soft p-6 hover:shadow-lg transition">
+                <div class="flex justify-between items-center mb-4">
+                    <h2 class="text-lg font-semibold flex items-center">
+                        <i class="fa fa-flask text-blue-500 mr-2"></i>裂变结果
+                    </h2>
+                </div>
+                <div class="relative overflow-x-auto max-h-[400px]" id="resultTableContainer">
+                    <div id="resultTableVirtualScroll" class="relative">
+                        <table class="min-w-full divide-y divide-gray-200" id="resultTable">
+                            <thead class="bg-gray-50 sticky top-0">
+                                <tr id="resultTableHeader">
+                                    <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">列1</th>
+                                    <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">列2</th>
+                                    <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">列3</th>
+                                </tr>
+                            </thead>
+                            <tbody class="bg-white divide-y divide-gray-200" id="resultTableBody">
+                                <tr class="text-center">
+                                    <td colspan="3" class="px-4 py-8 text-gray-500">请先上传文件并点击"开始裂变"</td>
+                                </tr>
+                            </tbody>
+                        </table>
+                        <!-- 虚拟滚动占位元素 -->
+                        <div id="resultTablePlaceholder" class="h-0"></div>
+                    </div>
+                </div>
+                <div class="mt-4 flex justify-between items-center">
+                    <div class="text-sm text-gray-500">共 <span id="resultRowCount">0</span> 条记录</div>
+                    <div><button id="downloadBtn" class="px-4 py-2 bg-orange-500 hover:bg-orange-600 text-white rounded-lg transition flex items-center opacity-50 cursor-not-allowed" disabled><i class="fa fa-download mr-2"></i>下载结果</button></div>
+                </div>
+            </div>
+        </div>
+    </div>
+</main>
+<!-- 处理进度模态框 -->
+<div id="processingModal" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 hidden">
+    <div class="bg-white rounded-xl p-8 max-w-md w-full mx-4 shadow-xl">
+        <div class="text-center">
+            <div class="inline-block animate-spin rounded-full h-12 w-12 border-b-2 border-blue-500 mb-4"></div>
+            <h3 class="text-lg font-semibold mb-2">正在处理数据</h3>
+            <p class="text-gray-500 mb-4">请稍候，我们正在进行数据裂变...</p>
+            <div class="w-full bg-gray-200 rounded-full h-2.5 mb-4">
+                <div id="progressBar" class="bg-blue-500 h-2.5 rounded-full" style="width: 0%"></div>
+            </div>
+            <p id="progressText" class="text-sm text-gray-500">0% 完成</p>
+            <p id="progressDetail" class="text-xs text-gray-500 mt-2">处理中...</p>
+        </div>
+    </div>
+</div>
+<!-- 加密的核心逻辑 -->
+<script>
+(function() {
+    try {
+        // 使用 Base64 编码核心逻辑
+        const encryptedScript = "ZXZhbChmdW5jdGlvbigpe2NvbnNvbGUubG9nKCdIaScpfSk=";
+        const decodedScript = decodeURIComponent(atob(encryptedScript));
+        eval(decodedScript);
+    } catch (error) {
+        console.error('加密脚本执行失败:', error);
+        alert('脚本加载失败，请检查浏览器控制台日志');
+    }
+})();
+</script>
+<script>
+document.addEventListener('DOMContentLoaded', function () {
+    // 全局变量
+    let originalData = [];
+    let resultData = [];
+    let headers = [];
+    let titleColumnIndex = -1;
+    let variantNameColumnIndex = -1;
+    let variantAttrColumnIndex = -1;
+    let skuAttrColumnIndex = -1;
+    let workbook = null;
+    let worker = null;
+    let isProcessing = false;
+    let rowHeight = 42;
+    let visibleRows = 20;
+    let currentStartIndex = 0;
+    const fileDropArea = document.getElementById('fileDropArea');
+    const fileInput = document.getElementById('fileInput');
+    const fileInfo = document.getElementById('fileInfo');
+    const fileName = document.getElementById('fileName');
+    const fileSize = document.getElementById('fileSize');
+    const removeFile = document.getElementById('removeFile');
+    const fissionCount = document.getElementById('fissionCount');
+    const decreaseCount = document.getElementById('decreaseCount');
+    const increaseCount = document.getElementById('increaseCount');
+    const titleColumn = document.getElementById('titleColumn');
+    const appendNumber = document.getElementById('appendNumber');
+    const processBtn = document.getElementById('processBtn');
+    const originalTableBody = document.getElementById('originalTableBody');
+    const resultTableBody = document.getElementById('resultTableBody');
+    const resultRowCount = document.getElementById('resultRowCount');
+    const downloadBtn = document.getElementById('downloadBtn');
+    const processingModal = document.getElementById('processingModal');
+    const progressBar = document.getElementById('progressBar');
+    const progressText = document.getElementById('progressText');
+    const progressDetail = document.getElementById('progressDetail');
+    const resultTableContainer = document.getElementById('resultTableContainer');
+    const resultTableVirtualScroll = document.getElementById('resultTableVirtualScroll');
+    const resultTablePlaceholder = document.getElementById('resultTablePlaceholder');
+    const batchSizeSelect = document.getElementById('batchSize');
+    // 初始化 Web Worker
+    function initWorker() {
+        if (worker) {
+            worker.terminate();
+        }
+        const workerScript = `
+            self.onmessage = function(e) {
+                const { originalData, headers, titleColumnIndex, appendNumber, variantNameColumnIndex, variantAttrColumnIndex, skuAttrColumnIndex, fissionCount, batchSize } = e.data;
+                const resultData = [];
+                const totalBatches = Math.ceil(originalData.length / batchSize);
+                const pattern = /^(.*?)-(\\d+)$/;
+                for (let batch = 0; batch < totalBatches; batch++) {
+                    const startIdx = batch * batchSize;
+                    const endIdx = Math.min(startIdx + batchSize, originalData.length);
+                    for (let i = startIdx; i < endIdx; i++) {
+                        const originalRow = originalData[i];
+                        for (let j = 0; j < fissionCount; j++) {
+                            const newRow = {...originalRow};
+                            const counter = j + 1;
+                            if (titleColumnIndex >= 0 && appendNumber) {
+                                const titleKey = headers[titleColumnIndex];
+                                if (newRow[titleKey]) {
+                                    newRow[titleKey] = \`\${newRow[titleKey]} (\${counter})\`;
+                                }
+                            }
+                            if (variantNameColumnIndex >= 0) {
+                                const variantNameKey = headers[variantNameColumnIndex];
+                                if (newRow[variantNameKey]) {
+                                    const match = newRow[variantNameKey].toString().match(pattern);
+                                    if (match) {
+                                        const prefix = match[1];
+                                        newRow[variantNameKey] = \`\${prefix}-\${String(counter).padStart(2, '0')}\`;
+                                    }
+                                }
+                            }
+                            if (variantAttrColumnIndex >= 0) {
+                                const variantAttrKey = headers[variantAttrColumnIndex];
+                                if (newRow[variantAttrKey]) {
+                                    const match = newRow[variantAttrKey].toString().match(pattern);
+                                    if (match) {
+                                        const prefix = match[1];
+                                        newRow[variantAttrKey] = \`\${prefix}-\${String(counter).padStart(2, '0')}\`;
+                                    }
+                                }
+                            }
+                            if (skuAttrColumnIndex >= 0 && variantAttrColumnIndex >= 0) {
+                                const skuAttrKey = headers[skuAttrColumnIndex];
+                                const variantAttrKey = headers[variantAttrColumnIndex];
+                                if (newRow[skuAttrKey]) {
+                                    try {
+                                        let skuAttrs = JSON.parse(newRow[skuAttrKey]);
+                                        if (Array.isArray(skuAttrs)) {
+                                            skuAttrs = skuAttrs.map(attr => {
+                                                if (attr.parentSpecName === "型号") {
+                                                    return {
+                                                        ...attr,
+                                                        specName: newRow[variantAttrKey] || attr.specName
+                                                    };
+                                                }
+                                                return attr;
+                                            });
+                                            newRow[skuAttrKey] = JSON.stringify(skuAttrs);
+                                        }
+                                    } catch (e) {
+                                        console.error('解析SKU属性失败:', e);
+                                    }
+                                }
+                            }
+                            resultData.push(newRow);
+                        }
+                    }
+                    const progress = Math.round(((batch + 1) / totalBatches) * 100);
+                    self.postMessage({
+                        type: 'progress',
+                        progress,
+                        currentBatch: batch + 1,
+                        totalBatches,
+                        processedRows: resultData.length
+                    });
+                }
+                self.postMessage({
+                    type: 'complete',
+                    resultData
+                });
+            };
+        `;
+        const blob = new Blob([workerScript], { type: 'application/javascript' });
+        const workerUrl = URL.createObjectURL(blob);
+        worker = new Worker(workerUrl);
+        worker.onmessage = function (e) {
+            if (e.data.type === 'progress') {
+                updateProgress(e.data.progress, e.data.currentBatch, e.data.totalBatches, e.data.processedRows);
+            } else if (e.data.type === 'complete') {
+                resultData = e.data.resultData;
+                finishProcessing();
+            }
+        };
+        worker.onerror = function (error) {
+            console.error('Worker error:', error);
+            alert('处理数据时发生错误: ' + error.message);
+            processingModal.classList.add('hidden');
+            isProcessing = false;
+        };
+    }
+    // 文件上传逻辑
+    fileDropArea.addEventListener('click', () => {
+        fileInput.click();
+    });
+    fileInput.addEventListener('change', (e) => {
+        if (e.target.files.length) {
+            handleFile(e.target.files[0]);
+        }
+    });
+    fileDropArea.addEventListener('dragover', (e) => {
+        e.preventDefault();
+        fileDropArea.classList.add('border-blue-500');
+        fileDropArea.classList.add('bg-blue-50');
+    });
+    fileDropArea.addEventListener('dragleave', () => {
+        fileDropArea.classList.remove('border-blue-500');
+        fileDropArea.classList.remove('bg-blue-50');
+    });
+    fileDropArea.addEventListener('drop', (e) => {
+        e.preventDefault();
+        fileDropArea.classList.remove('border-blue-500');
+        fileDropArea.classList.remove('bg-blue-50');
+        if (e.dataTransfer.files.length) {
+            handleFile(e.dataTransfer.files[0]);
+        }
+    });
+    function handleFile(file) {
+        const fileExtension = file.name.split('.').pop().toLowerCase();
+        if (!['csv', 'xlsx', 'xls'].includes(fileExtension)) {
+            alert('请上传CSV、XLSX或Excel格式的文件');
+            return;
+        }
+        fileName.textContent = file.name;
+        fileSize.textContent = formatFileSize(file.size);
+        fileInfo.classList.remove('hidden');
+        const reader = new FileReader();
+        reader.onload = (e) => {
+            try {
+                if (fileExtension === 'csv') {
+                    document.getElementById('sheetSelector').classList.add('hidden');
+                    processCSV(e.target.result);
+                } else {
+                    document.getElementById('sheetSelector').classList.remove('hidden');
+                    workbook = XLSX.read(e.target.result, { type: 'binary' });
+                    sheetSelect.innerHTML = '';
+                    workbook.SheetNames.forEach((sheetName, index) => {
+                        const option = document.createElement('option');
+                        option.value = index;
+                        option.textContent = sheetName;
+                        sheetSelect.appendChild(option);
+                    });
+                    processSheet(workbook.Sheets[workbook.SheetNames[0]]);
+                }
+            } catch (error) {
+                console.error('处理文件时出错:', error);
+                alert('处理文件时出错，请检查文件格式是否正确');
+            }
+        };
+        if (fileExtension === 'csv') {
+            reader.readAsText(file);
+        } else {
+            reader.readAsBinaryString(file);
+        }
+        processBtn.classList.remove('opacity-50', 'cursor-not-allowed');
+        processBtn.disabled = false;
+    }
+    sheetSelect.addEventListener('change', () => {
+        const selectedSheetIndex = parseInt(sheetSelect.value);
+        if (!isNaN(selectedSheetIndex) && workbook) {
+            processSheet(workbook.Sheets[workbook.SheetNames[selectedSheetIndex]]);
+        }
+    });
+    function processCSV(csvText) {
+        const lines = csvText.split('\n');
+        headers = lines[0].split(',').map(header => header.trim());
+        originalData = [];
+        for (let i = 1; i < lines.length; i++) {
+            if (lines[i].trim() === '') continue;
+            const values = lines[i].split(',');
+            const row = {};
+            headers.forEach((header, index) => {
+                row[header] = values[index] || '';
+            });
+            originalData.push(row);
+        }
+        updateTitleColumnSelector();
+        renderOriginalTable();
+    }
+    function processSheet(sheet) {
+        const jsonData = XLSX.utils.sheet_to_json(sheet, { header: 1 });
+        if (jsonData.length === 0) {
+            alert('所选工作表为空');
+            return;
+        }
+        headers = jsonData[0].map(header => header.toString().trim());
+        originalData = [];
+        for (let i = 1; i < jsonData.length; i++) {
+            if (jsonData[i].length === 0) continue;
+            const row = {};
+            headers.forEach((header, index) => {
+                row[header] = jsonData[i][index] !== undefined ? jsonData[i][index].toString() : '';
+            });
+            originalData.push(row);
+        }
+        updateTitleColumnSelector();
+        renderOriginalTable();
+    }
+    function updateTitleColumnSelector() {
+        const keywords = {
+            titleColumn: "产品标题",
+            variantNameColumn: "变种名称",
+            variantAttrColumn: "变种属性值二",
+            skuAttrColumn: "SKU属性"
+        };
+        const selects = {
+            titleColumn: document.getElementById('titleColumn'),
+            variantNameColumn: document.getElementById('variantNameColumn'),
+            variantAttrColumn: document.getElementById('variantAttrColumn'),
+            skuAttrColumn: document.getElementById('skuAttrColumn')
+        };
+        Object.values(selects).forEach(select => {
+            select.innerHTML = '<option value="">请选择列</option>';
+        });
+        headers.forEach((header, index) => {
+            Object.values(selects).forEach(select => {
+                const option = document.createElement('option');
+                option.value = index;
+                option.textContent = header;
+                select.appendChild(option);
+            });
+        });
+        Object.entries(selects).forEach(([key, select]) => {
+            const keyword = keywords[key];
+            headers.forEach((header, index) => {
+                if (header.trim() === keyword) {
+                    select.value = index;
+                }
+            });
+        });
+    }
+    function renderOriginalTable() {
+        originalTableBody.innerHTML = '';
+        if (originalData.length === 0) {
+            originalTableBody.innerHTML = `<tr class="text-center"><td colspan="${headers.length || 3}" class="px-4 py-8 text-gray-500">请上传表格文件</td></tr>`;
+            return;
+        }
+        updateTableHeader('original');
+        originalData.forEach((row, index) => {
+            const tr = document.createElement('tr');
+            tr.className = index % 2 === 0 ? 'bg-white' : 'bg-gray-50';
+            headers.forEach(header => {
+                const td = document.createElement('td');
+                td.className = 'px-4 py-3 whitespace-nowrap text-sm text-gray-500';
+                td.textContent = row[header] || '';
+                tr.appendChild(td);
+            });
+            originalTableBody.appendChild(tr);
+        });
+    }
+    // 裂变按钮点击事件
+    processBtn.addEventListener('click', () => {
+        if (isProcessing) return;
+        if (originalData.length === 0) {
+            alert('请先上传数据');
+            return;
+        }
+        titleColumnIndex = parseInt(titleColumn.value);
+        variantNameColumnIndex = parseInt(document.getElementById('variantNameColumn').value);
+        variantAttrColumnIndex = parseInt(document.getElementById('variantAttrColumn').value);
+        skuAttrColumnIndex = parseInt(document.getElementById('skuAttrColumn').value);
+        const count = parseInt(fissionCount.value);
+        if (isNaN(count) || count <= 0) {
+            alert('请输入有效的裂变倍数');
+            return;
+        }
+        // 验证SKU属性列是否包含"型号"
+        if (skuAttrColumnIndex >= 0) {
+            const skuAttrKey = headers[skuAttrColumnIndex];
+            let hasModel = false;
+            for (const row of originalData) {
+                if (row[skuAttrKey]) {
+                    try {
+                        const skuAttrs = JSON.parse(row[skuAttrKey]);
+                        if (Array.isArray(skuAttrs)) {
+                            for (const attr of skuAttrs) {
+                                if (attr.parentSpecName === "型号") {
+                                    hasModel = true;
+                                    break;
+                                }
+                            }
+                        }
+                    } catch (e) {
+                        console.error('解析SKU属性失败:', e);
+                    }
+                }
+                if (hasModel) break;
+            }
+            if (!hasModel) {
+                alert('请在SKU属性列中填写型号属性');
+                return;
+            }
+        }
+        const batchSize = parseInt(batchSizeSelect.value);
+        processingModal.classList.remove('hidden');
+        progressBar.style.width = '0%';
+        progressText.textContent = '0% 完成';
+        progressDetail.textContent = '准备中...';
+        isProcessing = true;
+        processBtn.disabled = true;
+        processBtn.classList.add('opacity-50', 'cursor-not-allowed');
+        initWorker();
+        worker.postMessage({
+            originalData,
+            headers,
+            titleColumnIndex,
+            appendNumber: appendNumber.checked,
+            variantNameColumnIndex,
+            variantAttrColumnIndex,
+            skuAttrColumnIndex,
+            fissionCount: count,
+            batchSize
+        });
+    });
+    function updateProgress(progress, currentBatch, totalBatches, processedRows) {
+        progressBar.style.width = `${progress}%`;
+        progressText.textContent = `${progress}% 完成`;
+        progressDetail.textContent = `批次 ${currentBatch}/${totalBatches} (${processedRows}行已处理)`;
+    }
+    function finishProcessing() {
+        processingModal.classList.add('hidden');
+        isProcessing = false;
+        processBtn.disabled = false;
+        processBtn.classList.remove('opacity-50', 'cursor-not-allowed');
+        calculateVisibleRows();
+        initVirtualScroll();
+        renderResultTable();
+        resultTableContainer.addEventListener('scroll', handleScroll);
+    }
+    function renderResultTable() {
+        resultTableBody.innerHTML = '';
+        if (resultData.length === 0) {
+            resultTableBody.innerHTML = `<tr class="text-center"><td colspan="${headers.length || 3}" class="px-4 py-8 text-gray-500">请先上传文件并点击"开始裂变"</td></tr>`;
+            resultRowCount.textContent = '0';
+            resultTablePlaceholder.style.height = '0px';
+            return;
+        }
+        updateTableHeader('result');
+        resultTablePlaceholder.style.height = `${resultData.length * rowHeight}px`;
+        renderVisibleRows();
+        resultRowCount.textContent = resultData.length;
+        downloadBtn.classList.remove('opacity-50', 'cursor-not-allowed');
+        downloadBtn.disabled = false;
+    }
+    function calculateVisibleRows() {
+        const containerHeight = resultTableContainer.clientHeight;
+        visibleRows = Math.ceil(containerHeight / rowHeight) + 10;
+    }
+    function initVirtualScroll() {
+        currentStartIndex = 0;
+        renderVisibleRows();
+    }
+    function renderVisibleRows() {
+        resultTableBody.innerHTML = '';
+        if (resultData.length === 0) return;
+        const endIndex = Math.min(currentStartIndex + visibleRows, resultData.length);
+        for (let i = currentStartIndex; i < endIndex; i++) {
+            const row = resultData[i];
+            const tr = document.createElement('tr');
+            tr.className = i % 2 === 0 ? 'bg-white' : 'bg-gray-50';
+            tr.style.position = 'absolute';
+            tr.style.top = `${i * rowHeight}px`;
+            tr.style.width = '100%';
+            headers.forEach(header => {
+                const td = document.createElement('td');
+                td.className = 'px-4 py-3 whitespace-nowrap text-sm text-gray-500';
+                td.textContent = row[header] || '';
+                tr.appendChild(td);
+            });
+            resultTableBody.appendChild(tr);
+        }
+    }
+    function handleScroll() {
+        const scrollTop = resultTableContainer.scrollTop;
+        const newStartIndex = Math.floor(scrollTop / rowHeight);
+        if (Math.abs(newStartIndex - currentStartIndex) > visibleRows / 3) {
+            currentStartIndex = newStartIndex;
+            renderVisibleRows();
+        }
+    }
+    function updateTableHeader(tableType) {
+        const headerRow = tableType === 'original' ? document.getElementById('originalTableHeader') : document.getElementById('resultTableHeader');
+        headerRow.innerHTML = '';
+        if (headers.length === 0) {
+            headerRow.innerHTML = `<th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">列1</th><th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">列2</th><th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">列3</th>`;
+            return;
+        }
+        headers.forEach(header => {
+            const th = document.createElement('th');
+            th.className = 'px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider';
+            th.textContent = header;
+            headerRow.appendChild(th);
+        });
+    }
+    downloadBtn.addEventListener('click', () => {
+        if (resultData.length === 0) return;
+        const newWorkbook = XLSX.utils.book_new();
+        const worksheetData = [headers].concat(resultData.map(row => headers.map(header => row[header] || '')));
+        const worksheet = XLSX.utils.aoa_to_sheet(worksheetData);
+        XLSX.utils.book_append_sheet(newWorkbook, worksheet, '裂变结果');
+        XLSX.writeFile(newWorkbook, `裂变结果_${new Date().toISOString().slice(0, 10)}.xlsx`);
+    });
+    decreaseCount.addEventListener('click', () => {
+        const current = parseInt(fissionCount.value);
+        if (current > 1) {
+            fissionCount.value = current - 1;
+        }
+    });
+    increaseCount.addEventListener('click', () => {
+        const current = parseInt(fissionCount.value);
+        if (current < 1000) {
+            fissionCount.value = current + 1;
+        }
+    });
+    function formatFileSize(bytes) {
+        if (bytes === 0) return '0 Bytes';
+        const k = 1024;
+        const sizes = ['Bytes', 'KB', 'MB', 'GB'];
+        const i = Math.floor(Math.log(bytes) / Math.log(k));
+        return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
+    }
+    window.addEventListener('resize', () => {
+        if (resultData.length > 0) {
+            calculateVisibleRows();
+            renderVisibleRows();
+        }
+    });
+});
+</script>
+</body>
+</html>
